@@ -5,8 +5,11 @@ from .methods import (
     DEFAULT_ROLLING_WINDOWS,
     add_calendar_features,
     add_competition_missing_flag,
+    add_holiday_calendar_features,
+    add_history_ratio_features,
     add_lag_features,
     add_promo_holiday_store_features,
+    add_promo_sequence_features,
     add_rolling_features,
     annotate_observation_gaps,
     extract_target,
@@ -192,7 +195,7 @@ class PreprocessingModule:
             global_median_sales=self.global_median_sales_,
             lags=MODEL_LAGS,
         )
-        return impute_rolling_features(
+        result = impute_rolling_features(
             result,
             store_median_sales=self.store_median_sales_,
             global_median_sales=self.global_median_sales_,
@@ -200,6 +203,7 @@ class PreprocessingModule:
             global_median_std=self.global_median_std_,
             windows=DEFAULT_ROLLING_WINDOWS,
         )
+        return add_history_ratio_features(result)
 
     def _finalize_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -235,6 +239,8 @@ class PreprocessingModule:
         """
         df = merge_train_store(transactions, store)
         df = parse_date_and_sort(df)
+        df = add_promo_sequence_features(df)
+        df = add_holiday_calendar_features(df)
         df = filter_open_days(df)
         df = add_competition_missing_flag(df)
         df = handle_promo2_missing(df)

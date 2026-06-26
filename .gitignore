@@ -39,3 +39,5 @@ wandb/
 .DS_Store
 .idea/
 .vscode/
+
+data/prepared_data/
