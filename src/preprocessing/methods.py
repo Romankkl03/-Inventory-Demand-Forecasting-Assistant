@@ -220,9 +220,136 @@ def add_calendar_features(df: pd.DataFrame, date_col: str = "Date") -> pd.DataFr
     result["is_weekend"] = result["dayofweek"] >= 5
     result["is_month_start"] = date.dt.is_month_start
     result["is_month_end"] = date.dt.is_month_end
+    result["days_to_month_end"] = date.dt.daysinmonth - date.dt.day
     result["quarter"] = date.dt.quarter
     result["season"] = result["month"].map(_SEASON_BY_MONTH)
+
+    if "Promo" in result.columns and "dayofweek" in result.columns:
+        result["promo_x_dayofweek"] = result["Promo"].astype(int) * result["dayofweek"]
+
     return result
+
+
+def _promo_streak_group(group: pd.DataFrame) -> pd.Series:
+    """Compute consecutive Promo=1 streak length within a store series."""
+    promo = group["Promo"].astype(int).to_numpy()
+    dates = group["Date"].to_numpy()
+    streak = np.zeros(len(group), dtype=int)
+
+    for i in range(len(group)):
+        if promo[i] == 0:
+            streak[i] = 0
+            continue
+
+        if i == 0:
+            streak[i] = 1
+            continue
+
+        previous_gap_days = (dates[i] - dates[i - 1]) / np.timedelta64(1, "D")
+        if promo[i - 1] == 1 and previous_gap_days == 1:
+            streak[i] = streak[i - 1] + 1
+        else:
+            streak[i] = 1
+
+    return pd.Series(streak, index=group.index)
+
+
+def _days_since_last_promo_group(group: pd.DataFrame) -> pd.Series:
+    """Compute calendar days since the last Promo=1 day for each store."""
+    promo = group["Promo"].astype(int)
+    dates = group["Date"]
+    values: list[int] = []
+    last_promo_date = None
+    first_date = dates.iloc[0]
+
+    for date, is_promo in zip(dates, promo):
+        if is_promo == 1:
+            last_promo_date = date
+            values.append(0)
+        elif last_promo_date is None:
+            values.append((date - first_date).days)
+        else:
+            values.append((date - last_promo_date).days)
+
+    return pd.Series(values, index=group.index)
+
+
+def _lookup_store_calendar_feature(
+    df: pd.DataFrame,
+    value_col: str,
+    day_offset: int,
+) -> pd.Series:
+    """
+    Look up a store-level calendar feature on ``Date + day_offset`` days.
+
+    Args:
+        df (pd.DataFrame): Table with ``Store``, ``Date``, and ``value_col``.
+        value_col (str): Column to retrieve from the offset date.
+        day_offset (int): Calendar day shift applied before lookup.
+
+    Returns:
+        pd.Series: Values aligned to the original rows.
+    """
+    history = df[["Store", "Date", value_col]].rename(
+        columns={"Date": "lookup_date", value_col: "lookup_value"}
+    )
+    keys = df[["Store", "Date"]].copy()
+    keys["lookup_date"] = keys["Date"] + pd.Timedelta(days=day_offset)
+    lookup = keys.merge(history, on=["Store", "lookup_date"], how="left")["lookup_value"]
+    return lookup.fillna(0)
+
+
+def add_promo_sequence_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add promo streak and timing features per store.
+
+    Features:
+        - ``promo_streak``: consecutive calendar days with ``Promo == 1``.
+        - ``promo_start_flag``: ``Promo == 1`` after a non-promo calendar day.
+        - ``days_since_last_promo``: days since the last promo day.
+
+    Args:
+        df (pd.DataFrame): Table sorted by ``Store`` and ``Date`` with ``Promo``.
+
+    Returns:
+        pd.DataFrame: Copy with promo sequence features.
+    """
+    result = df.sort_values(["Store", "Date"]).copy()
+    grouped = result.groupby("Store", group_keys=False)
+
+    result["promo_streak"] = grouped.apply(_promo_streak_group, include_groups=False)
+    result["days_since_last_promo"] = grouped.apply(_days_since_last_promo_group, include_groups=False)
+
+    prev_day_promo = _lookup_store_calendar_feature(result, "Promo", day_offset=-1).astype(int)
+    result["promo_start_flag"] = (
+        (result["Promo"].astype(int) == 1) & (prev_day_promo == 0)
+    ).astype(int)
+
+    return result.reset_index(drop=True)
+
+
+def add_holiday_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add calendar holiday proximity features.
+
+    Args:
+        df (pd.DataFrame): Table with ``Store``, ``Date``, ``StateHoliday``,
+            and ``SchoolHoliday``.
+
+    Returns:
+        pd.DataFrame: Copy with ``is_day_before_holiday``.
+    """
+    result = df.sort_values(["Store", "Date"]).copy()
+    is_holiday = (
+        (result["StateHoliday"] != "0") | (result["SchoolHoliday"].astype(int) == 1)
+    ).astype(int)
+    result["_is_holiday"] = is_holiday
+    result["is_day_before_holiday"] = _lookup_store_calendar_feature(
+        result,
+        "_is_holiday",
+        day_offset=1,
+    ).astype(int)
+    return result.drop(columns="_is_holiday").reset_index(drop=True)
 
 
 DEFAULT_LAGS = (1, 7, 14, 28)
@@ -264,6 +391,7 @@ def add_lag_features(
 
 
 DEFAULT_ROLLING_WINDOWS = (7, 14, 28)
+ROLLING_MAX_WINDOWS = (7, 28)
 
 
 def _rolling_min_periods(window: int, min_periods: int | None) -> int:
@@ -304,8 +432,8 @@ def add_rolling_features(
             Defaults to half the window size.
 
     Returns:
-        pd.DataFrame: Copy with ``rolling_mean_{w}`` and ``rolling_std_{w}``
-            columns for each window.
+        pd.DataFrame: Copy with ``rolling_mean_{w}``, ``rolling_std_{w}``, and
+            ``rolling_max_{w}`` columns for selected windows.
     """
     result = df.sort_values(["Store", "Date"]).copy()
 
@@ -316,7 +444,36 @@ def add_rolling_features(
         result[f"rolling_mean_{window}"] = rolling.mean().reset_index(level=0, drop=True)
         result[f"rolling_std_{window}"] = rolling.std().reset_index(level=0, drop=True)
 
+    for window in ROLLING_MAX_WINDOWS:
+        mp = _rolling_min_periods(window, min_periods)
+        past_values = result.groupby("Store")[target_col].shift(1)
+        rolling = past_values.groupby(result["Store"]).rolling(window, min_periods=mp)
+        result[f"rolling_max_{window}"] = rolling.max().reset_index(level=0, drop=True)
+
     return result.reset_index(drop=True)
+
+
+def add_history_ratio_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add ratio-based history features derived from lags and rolling means.
+
+    Args:
+        df (pd.DataFrame): Table with ``lag_7``, ``rolling_mean_7``, and
+            ``rolling_mean_28``.
+
+    Returns:
+        pd.DataFrame: Copy with ``trend_7_28`` and ``lag_7_to_rolling_mean_28``.
+    """
+    result = df.copy()
+    rolling_mean_28 = result["rolling_mean_28"].replace(0, np.nan)
+
+    result["trend_7_28"] = result["rolling_mean_7"] / rolling_mean_28
+    result["lag_7_to_rolling_mean_28"] = result["lag_7"] / rolling_mean_28
+
+    for col in ("trend_7_28", "lag_7_to_rolling_mean_28"):
+        result[col] = result[col].replace([np.inf, -np.inf], np.nan).fillna(1.0)
+
+    return result
 
 
 def impute_lag_features(
@@ -387,6 +544,11 @@ def impute_rolling_features(
         result[f"{std_col}_is_missing"] = result[std_col].isna().astype(int)
         result[mean_col] = result[mean_col].fillna(mean_fallback)
         result[std_col] = result[std_col].fillna(std_fallback)
+
+    for window in ROLLING_MAX_WINDOWS:
+        max_col = f"rolling_max_{window}"
+        result[f"{max_col}_is_missing"] = result[max_col].isna().astype(int)
+        result[max_col] = result[max_col].fillna(mean_fallback)
 
     return result
 
