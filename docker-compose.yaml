@@ -1,4 +1,32 @@
 services:
+  app:
+    build: .
+    image: id-forecasting-api:latest
+    container_name: id-forecasting-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-forecasting}
+      DB_ECHO: ${DB_ECHO:-false}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-3B-Instruct}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      VLLM_TIMEOUT_SEC: ${VLLM_TIMEOUT_SEC:-30}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   db:
     image: postgres:16-alpine
     container_name: id-forecasting-db

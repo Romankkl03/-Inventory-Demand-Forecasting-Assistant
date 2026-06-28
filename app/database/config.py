@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     DB_NAME: str = "forecasting"
 
     DB_ECHO: bool = False
+    VLLM_BASE_URL: str | None = None
+    VLLM_MODEL: str = "Qwen/Qwen2.5-3B-Instruct"
+    VLLM_API_KEY: str | None = None
+    VLLM_TIMEOUT_SEC: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

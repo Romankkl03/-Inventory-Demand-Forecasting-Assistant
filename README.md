@@ -14,6 +14,33 @@ Python project for inventory demand forecasting, model experimentation, and serv
 Application code lives in `app/`. DB connection is configured in `app/database/config.py`.
 Schema overview is in `docs/db_schema.md`.
 
+## Run API
+
+- `uv run python main.py`
+- Swagger docs: `http://localhost:8000/docs`
+
+## Run API in Docker Compose
+
+1. Create local env:
+   - `cp .env.example .env`
+2. Start services:
+   - `docker compose up --build -d`
+3. Open Swagger:
+   - `http://localhost:8000/docs`
+4. Stop services:
+   - `docker compose down`
+
+Main endpoints:
+
+- `POST /datasets/upload`
+- `POST /forecast/run`
+- `GET /forecast/{id}`
+- `GET /forecast/run/{id}/status`
+- `GET /recommendations/{id}`
+- `GET /reports/{id}`
+- `GET /models`
+- `GET /health`
+
 ## Project layout
 
 ```text

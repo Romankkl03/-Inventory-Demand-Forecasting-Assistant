@@ -4,8 +4,6 @@ Defines database tables, enums, and relationships for users, stores,
 sales data, forecasting workflows, and subscription billing.
 """
 
-from __future__ import annotations
-
 from datetime import date as DateType
 from datetime import datetime, timezone
 from enum import Enum
