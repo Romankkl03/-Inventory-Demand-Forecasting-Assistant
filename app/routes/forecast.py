@@ -2,7 +2,13 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from app.database.database import get_session
-from app.schemas import ForecastRunRequest, ForecastRunResponse, ForecastRunStatusResponse
+from app.schemas import (
+    ForecastRunRequest,
+    ForecastRunResponse,
+    ForecastRunStatusResponse,
+    RandomValForecastRequest,
+    RandomValForecastResponse,
+)
 from app.services.forecasting_service import ForecastingService
 
 router = APIRouter(prefix="/forecast", tags=["forecast"])
@@ -14,6 +20,14 @@ def run_forecast(
     session: Session = Depends(get_session),
 ) -> ForecastRunResponse:
     return ForecastingService(session).run_forecast(payload)
+
+
+@router.post("/run/random-val", response_model=RandomValForecastResponse)
+def run_random_val_forecast(
+    payload: RandomValForecastRequest,
+    session: Session = Depends(get_session),
+) -> RandomValForecastResponse:
+    return ForecastingService(session).run_random_val_inference(payload)
 
 
 @router.get("/{forecast_run_id}", response_model=ForecastRunResponse)

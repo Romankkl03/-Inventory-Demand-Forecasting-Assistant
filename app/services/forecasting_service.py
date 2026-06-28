@@ -3,27 +3,42 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
+import joblib
+import numpy as np
 import pandas as pd
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
+from app.forecasting.data.reader import DataReader
+from app.forecasting.data.spliter import TemporalSpliter
+from app.forecasting.postprocessing import apply_sales_uplift_to_log_predictions
+from app.forecasting.preprocessing.module import PreprocessingModule
 from app.models import (
     Dataset,
+    DatasetStatus,
     Forecast,
     ForecastRun,
     ForecastRunStatus,
+    ModelType,
     ModelVersion,
     SalesRecord,
     Store,
     User,
+    UserRole,
 )
 from app.schemas import (
     ForecastPointResponse,
     ForecastRunRequest,
     ForecastRunResponse,
     ForecastRunStatusResponse,
+    RandomValForecastRequest,
+    RandomValForecastResponse,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MODEL_PATH = PROJECT_ROOT / "models" / "hgb_full.joblib"
 
 
 class ForecastingService:
@@ -105,6 +120,135 @@ class ForecastingService:
             status=run.status.value,
             started_at=run.started_at,
             finished_at=run.finished_at,
+        )
+
+    def run_random_val_inference(
+        self,
+        payload: RandomValForecastRequest,
+    ) -> RandomValForecastResponse:
+        user = self.session.get(User, payload.created_by)
+        if user is None:
+            user = self.session.exec(select(User).order_by(User.id)).first()
+        if user is None:
+            user = User(name="System Admin", email="admin@example.com", role=UserRole.ADMIN)
+            self.session.add(user)
+            self.session.flush()
+
+        model_version = self.session.get(ModelVersion, payload.model_version_id)
+        if model_version is None:
+            model_version = self.session.exec(select(ModelVersion).order_by(ModelVersion.id)).first()
+        if model_version is None:
+            model_version = ModelVersion(
+                name="baseline-demand-model",
+                version="1.0.0",
+                model_type=ModelType.BASELINE,
+                features_version="baseline-v1",
+                metrics_json={"mae": 0.0, "note": "auto-created for inference"},
+            )
+            self.session.add(model_version)
+            self.session.flush()
+
+        if not MODEL_PATH.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model file not found: {MODEL_PATH}",
+            )
+
+        try:
+            raw_data = DataReader().read()
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+        split = TemporalSpliter(train_ratio=0.8, val_ratio=0.2).split(raw_data["train"])
+        if split.val is None or split.val.empty:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Validation split is empty.",
+            )
+
+        preprocessor = PreprocessingModule(use_log=True)
+        preprocessor.fit(split.train, raw_data["store"])
+        val_df = preprocessor.transform(split.val, raw_data["store"])
+        feature_cols = preprocessor.feature_columns_
+        if not feature_cols:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to infer feature columns for inference.",
+            )
+
+        model = joblib.load(MODEL_PATH)
+        rng = np.random.default_rng(payload.seed)
+        row_idx = int(rng.integers(0, len(val_df)))
+        row = val_df.iloc[[row_idx]].copy()
+        x_row = row[feature_cols]
+
+        pred_log = model.predict(x_row)
+        pred_log_pp, uplift_fraction = apply_sales_uplift_to_log_predictions(pred_log, x_row)
+
+        pred_sales_raw = float(np.clip(np.expm1(pred_log[0]), 0, None))
+        pred_sales_pp = float(np.clip(np.expm1(pred_log_pp[0]), 0, None))
+        actual_sales = float(np.clip(np.expm1(row["y"].iloc[0]), 0, None))
+
+        store_external_id = str(int(row["Store"].iloc[0]))
+        store = self.session.exec(
+            select(Store).where(Store.external_id == store_external_id)
+        ).first()
+        if store is None:
+            raw_store_row = raw_data["store"][raw_data["store"]["Store"] == int(store_external_id)]
+            store = Store(
+                external_id=store_external_id,
+                store_type=raw_store_row["StoreType"].iloc[0] if not raw_store_row.empty else None,
+                assortment=raw_store_row["Assortment"].iloc[0] if not raw_store_row.empty else None,
+                competition_distance=(
+                    float(raw_store_row["CompetitionDistance"].iloc[0])
+                    if not raw_store_row.empty and pd.notna(raw_store_row["CompetitionDistance"].iloc[0])
+                    else None
+                ),
+            )
+            self.session.add(store)
+            self.session.flush()
+
+        dataset = self.session.exec(select(Dataset).order_by(Dataset.id)).first()
+        if dataset is None:
+            dataset = Dataset(
+                name="rossmann-val-random",
+                source="data/raw/rossmann/train.csv",
+                uploaded_by=user.id,
+                status=DatasetStatus.READY,
+            )
+            self.session.add(dataset)
+            self.session.flush()
+
+        forecast_run = ForecastRun(
+            dataset_id=dataset.id,
+            model_version_id=model_version.id,
+            created_by=user.id,
+            status=ForecastRunStatus.COMPLETED,
+            horizon=1,
+            started_at=pd.Timestamp.utcnow(),
+            finished_at=pd.Timestamp.utcnow(),
+        )
+        self.session.add(forecast_run)
+        self.session.flush()
+
+        forecast_item = Forecast(
+            forecast_run_id=forecast_run.id,
+            store_id=store.id,
+            date=pd.to_datetime(row["Date"].iloc[0]).date(),
+            predicted_sales=round(pred_sales_pp, 2),
+        )
+        self.session.add(forecast_item)
+        self.session.commit()
+
+        return RandomValForecastResponse(
+            forecast_run_id=forecast_run.id,
+            status=forecast_run.status.value,
+            store_id=store.id,
+            forecast_date=forecast_item.date,
+            actual_sales=round(actual_sales, 2),
+            predicted_sales_raw=round(pred_sales_raw, 2),
+            predicted_sales_postprocessed=round(pred_sales_pp, 2),
+            uplift_fraction=round(float(uplift_fraction[0]), 4),
         )
 
     def _generate_forecasts(

@@ -34,6 +34,7 @@ Main endpoints:
 
 - `POST /datasets/upload`
 - `POST /forecast/run`
+- `POST /forecast/run/random-val` (random row inference from Rossmann validation split using `models/hgb_full.joblib`)
 - `GET /forecast/{id}`
 - `GET /forecast/run/{id}/status`
 - `GET /recommendations/{id}`

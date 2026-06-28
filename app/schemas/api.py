@@ -44,6 +44,12 @@ class ForecastRunRequest(BaseModel):
     start_date: date | None = None
 
 
+class RandomValForecastRequest(BaseModel):
+    created_by: int
+    model_version_id: int = 1
+    seed: int | None = None
+
+
 class ForecastPointResponse(BaseModel):
     store_id: int
     date: date
@@ -56,6 +62,17 @@ class ForecastRunResponse(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     forecasts: list[ForecastPointResponse]
+
+
+class RandomValForecastResponse(BaseModel):
+    forecast_run_id: int
+    status: str
+    store_id: int
+    forecast_date: date
+    actual_sales: float
+    predicted_sales_raw: float
+    predicted_sales_postprocessed: float
+    uplift_fraction: float
 
 
 class ForecastRunStatusResponse(BaseModel):
