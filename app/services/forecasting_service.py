@@ -178,18 +178,33 @@ class ForecastingService:
 
         model = joblib.load(MODEL_PATH)
         rng = np.random.default_rng(payload.seed)
-        row_idx = int(rng.integers(0, len(val_df)))
-        row = val_df.iloc[[row_idx]].copy()
-        x_row = row[feature_cols]
+        val_df = val_df.sort_values(["Store", "Date"]).reset_index(drop=True)
+        eligible_stores = (
+            val_df.groupby("Store")
+            .size()
+            .loc[lambda series: series >= payload.horizon]
+            .index.to_list()
+        )
+        if not eligible_stores:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No validation store has enough rows for requested horizon.",
+            )
 
-        pred_log = model.predict(x_row)
-        pred_log_pp, uplift_fraction = apply_sales_uplift_to_log_predictions(pred_log, x_row)
+        store_external_id = str(int(rng.choice(eligible_stores)))
+        store_rows = val_df[val_df["Store"] == int(store_external_id)].sort_values("Date").reset_index(drop=True)
+        max_start_idx = len(store_rows) - payload.horizon
+        start_idx = int(rng.integers(0, max_start_idx + 1))
+        run_rows = store_rows.iloc[start_idx : start_idx + payload.horizon].copy()
+        x_rows = run_rows[feature_cols]
 
-        pred_sales_raw = float(np.clip(np.expm1(pred_log[0]), 0, None))
-        pred_sales_pp = float(np.clip(np.expm1(pred_log_pp[0]), 0, None))
-        actual_sales = float(np.clip(np.expm1(row["y"].iloc[0]), 0, None))
+        pred_log = model.predict(x_rows)
+        pred_log_pp, uplift_fraction = apply_sales_uplift_to_log_predictions(pred_log, x_rows)
 
-        store_external_id = str(int(row["Store"].iloc[0]))
+        pred_sales_raw = np.clip(np.expm1(pred_log), 0, None)
+        pred_sales_pp = np.clip(np.expm1(pred_log_pp), 0, None)
+        actual_sales = np.clip(np.expm1(run_rows["y"].to_numpy()), 0, None)
+
         store = self.session.exec(
             select(Store).where(Store.external_id == store_external_id)
         ).first()
@@ -224,31 +239,32 @@ class ForecastingService:
             model_version_id=model_version.id,
             created_by=user.id,
             status=ForecastRunStatus.COMPLETED,
-            horizon=1,
+            horizon=payload.horizon,
             started_at=pd.Timestamp.utcnow(),
             finished_at=pd.Timestamp.utcnow(),
         )
         self.session.add(forecast_run)
         self.session.flush()
 
-        forecast_item = Forecast(
-            forecast_run_id=forecast_run.id,
-            store_id=store.id,
-            date=pd.to_datetime(row["Date"].iloc[0]).date(),
-            predicted_sales=round(pred_sales_pp, 2),
-        )
-        self.session.add(forecast_item)
+        for row_idx, row in enumerate(run_rows.itertuples(index=False)):
+            forecast_item = Forecast(
+                forecast_run_id=forecast_run.id,
+                store_id=store.id,
+                date=pd.to_datetime(row.Date).date(),
+                predicted_sales=round(float(pred_sales_pp[row_idx]), 2),
+            )
+            self.session.add(forecast_item)
         self.session.commit()
 
         return RandomValForecastResponse(
             forecast_run_id=forecast_run.id,
             status=forecast_run.status.value,
             store_id=store.id,
-            forecast_date=forecast_item.date,
-            actual_sales=round(actual_sales, 2),
-            predicted_sales_raw=round(pred_sales_raw, 2),
-            predicted_sales_postprocessed=round(pred_sales_pp, 2),
-            uplift_fraction=round(float(uplift_fraction[0]), 4),
+            horizon=payload.horizon,
+            forecast_start_date=pd.to_datetime(run_rows["Date"].iloc[0]).date(),
+            actual_sales_total=round(float(actual_sales.sum()), 2),
+            predicted_sales_raw_total=round(float(pred_sales_raw.sum()), 2),
+            predicted_sales_postprocessed_total=round(float(pred_sales_pp.sum()), 2),
         )
 
     def _generate_forecasts(

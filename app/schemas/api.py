@@ -48,6 +48,7 @@ class RandomValForecastRequest(BaseModel):
     created_by: int
     model_version_id: int = 1
     seed: int | None = None
+    horizon: int = Field(default=14, ge=1, le=90)
 
 
 class ForecastPointResponse(BaseModel):
@@ -68,11 +69,11 @@ class RandomValForecastResponse(BaseModel):
     forecast_run_id: int
     status: str
     store_id: int
-    forecast_date: date
-    actual_sales: float
-    predicted_sales_raw: float
-    predicted_sales_postprocessed: float
-    uplift_fraction: float
+    horizon: int
+    forecast_start_date: date
+    actual_sales_total: float
+    predicted_sales_raw_total: float
+    predicted_sales_postprocessed_total: float
 
 
 class ForecastRunStatusResponse(BaseModel):

@@ -1,3 +1,4 @@
+from .auth import UserCredential, UserSession
 from .entities import (
     Dataset,
     DatasetStatus,
@@ -23,6 +24,8 @@ from .entities import (
 )
 
 __all__ = [
+    "UserCredential",
+    "UserSession",
     "Dataset",
     "DatasetStatus",
     "Forecast",

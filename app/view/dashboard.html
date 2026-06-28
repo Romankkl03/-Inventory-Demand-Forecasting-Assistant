@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+<div class="card">
+    <h2>Welcome, {{ user.name }}</h2>
+    <p class="muted">Run forecasting flow end-to-end from UI.</p>
+    {% if status_message %}<div class="ok">{{ status_message }}</div>{% endif %}
+    {% if error_message %}<div class="err">{{ error_message }}</div>{% endif %}
+    {% if last_run %}
+    <p><b>Last run status:</b> {{ last_run.status.value }} (run id: {{ last_run.id }})</p>
+    {% endif %}
+</div>
+
+<div class="grid">
+    <div class="card">
+        <h3>Upload Data (CSV)</h3>
+        <p class="muted">Expected columns: Store, Date, Sales, Customers, Promo, Promo2, SchoolHoliday, StateHoliday, Open.</p>
+        <form method="post" action="/dashboard/upload" enctype="multipart/form-data">
+            <label>Dataset name</label>
+            <input type="text" name="dataset_name" value="uploaded-dataset" required />
+            <label>Source</label>
+            <input type="text" name="source" value="ui-upload" required />
+            <label>CSV file</label>
+            <input type="file" name="csv_file" accept=".csv" required />
+            <button type="submit">Upload dataset</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Use Random Example from Val</h3>
+        <form method="post" action="/dashboard/random-val">
+            <label>Model version id</label>
+            <input type="number" name="model_version_id" value="1" min="1" />
+            <label>Horizon (days)</label>
+            <input type="number" name="horizon" value="14" min="1" max="90" required />
+            <label>Random seed (optional)</label>
+            <input type="number" name="seed" />
+            <button type="submit">Run random val inference</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Run Forecast</h3>
+        <form method="post" action="/dashboard/run-forecast">
+            <label>Dataset id</label>
+            <input type="number" name="dataset_id" value="1" min="1" required />
+            <label>Model version id</label>
+            <input type="number" name="model_version_id" value="1" min="1" required />
+            <label>Horizon (days)</label>
+            <input type="number" name="horizon" value="14" min="1" max="90" required />
+            <button type="submit">Run forecast</button>
+        </form>
+    </div>
+</div>
+
+{% if history_forecast_chart %}
+<div class="card">
+    <h3>Sales History and Forecast</h3>
+    <canvas id="salesChart"></canvas>
+</div>
+{% endif %}
+
+{% if metrics %}
+<div class="card">
+    <h3>Key Metrics</h3>
+    <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Total demand on horizon</td><td>{{ metrics.total_forecast_horizon }}</td></tr>
+        <tr><td>Average daily demand</td><td>{{ metrics.avg_daily_forecast }}</td></tr>
+        <tr><td>Max daily demand</td><td>{{ metrics.max_daily_forecast }}</td></tr>
+    </table>
+</div>
+{% endif %}
+
+{% if recommendations %}
+<div class="card">
+    <h3>Order Recommendations</h3>
+    <table>
+        <tr>
+            <th>Store</th>
+            <th>Expected demand</th>
+            <th>Recommended order</th>
+            <th>Risk</th>
+            <th>Comment</th>
+        </tr>
+        {% for item in recommendations %}
+        <tr>
+            <td>{{ item.store_id }}</td>
+            <td>{{ item.expected_demand }}</td>
+            <td>{{ item.recommended_order }}</td>
+            <td>{{ item.risk_level }}</td>
+            <td>{{ item.comment }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+{% if report %}
+<div class="card">
+    <h3>Final Report</h3>
+    <p>{{ report.summary }}</p>
+    <p class="muted">Created: {{ report.created_at }}</p>
+</div>
+{% endif %}
+
+{% if history_forecast_chart %}
+<script>
+const historyDates = {{ history_forecast_chart.history_dates | tojson }};
+const historyValues = {{ history_forecast_chart.history_values | tojson }};
+const forecastDates = {{ history_forecast_chart.forecast_dates | tojson }};
+const forecastValues = {{ history_forecast_chart.forecast_values | tojson }};
+const labels = [...historyDates, ...forecastDates];
+const historyPad = [...historyValues, ...new Array(forecastValues.length).fill(null)];
+const forecastPad = [...new Array(historyValues.length).fill(null), ...forecastValues];
+
+new Chart(document.getElementById("salesChart"), {
+  type: "line",
+  data: {
+    labels: labels,
+    datasets: [
+      { label: "History sales", data: historyPad, borderColor: "#2563eb", tension: 0.2 },
+      { label: "Forecast sales", data: forecastPad, borderColor: "#dc2626", tension: 0.2 }
+    ]
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

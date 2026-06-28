@@ -6,8 +6,10 @@ from app.routes.health import router as health_router
 from app.routes.models import router as models_router
 from app.routes.recommendations import router as recommendations_router
 from app.routes.reports import router as reports_router
+from app.routes.ui import router as ui_router
 
 api_router = APIRouter()
+api_router.include_router(ui_router)
 api_router.include_router(health_router)
 api_router.include_router(datasets_router)
 api_router.include_router(forecast_router)

@@ -18,6 +18,10 @@ Schema overview is in `docs/db_schema.md`.
 
 - `uv run python main.py`
 - Swagger docs: `http://localhost:8000/docs`
+- UI:
+  - `http://localhost:8000/login`
+  - `http://localhost:8000/signup`
+  - `http://localhost:8000/dashboard`
 
 ## Run API in Docker Compose
 

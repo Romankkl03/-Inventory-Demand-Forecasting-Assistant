@@ -1,7 +1,8 @@
 from app import models  # noqa: F401  Ensures model metadata is registered.
 from app.database.database import create_all_tables
 from app.database.database import engine
-from app.models import ModelType, ModelVersion, User, UserRole
+from app.models import ModelType, ModelVersion, User, UserCredential, UserRole
+import hashlib
 from sqlmodel import Session, select
 
 
@@ -12,12 +13,27 @@ def init_db() -> None:
 
 def _seed_reference_data() -> None:
     with Session(engine) as session:
-        if session.exec(select(User)).first() is None:
+        admin = session.exec(select(User).where(User.email == "admin")).first()
+        if admin is None:
+            admin = User(name="admin", email="admin", role=UserRole.ADMIN)
+            session.add(admin)
+            session.flush()
+
+        admin_cred = session.exec(
+            select(UserCredential).where(UserCredential.user_id == admin.id)
+        ).first()
+        if admin_cred is None:
+            salt = "admin_salt"
+            digest = hashlib.pbkdf2_hmac(
+                "sha256",
+                b"admin",
+                salt.encode("utf-8"),
+                120_000,
+            ).hex()
             session.add(
-                User(
-                    name="System Admin",
-                    email="admin@example.com",
-                    role=UserRole.ADMIN,
+                UserCredential(
+                    user_id=admin.id,
+                    password_hash=f"{salt}${digest}",
                 )
             )
 
