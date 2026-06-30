@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Forecasting Assistant{% endblock %}</title>
+    <title>{% block title %}Ассистент прогнозирования спроса{% endblock %}</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1c2434; }
         nav { background: #0f172a; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; }
@@ -24,14 +24,14 @@
 </head>
 <body>
 <nav>
-    <div>Inventory Demand Forecasting Assistant</div>
+    <div>Ассистент прогнозирования спроса</div>
     <div>
-        <a href="/dashboard">Dashboard</a>
-        <a href="/dashboard/history">Forecast History</a>
+        <a href="/dashboard">Дашборд</a>
+        <a href="/dashboard/history">История прогнозов</a>
         {% if user and user.email == "admin" %}
         <a href="/docs">Swagger</a>
         {% endif %}
-        <a href="/logout">Logout</a>
+        <a href="/logout">Выйти</a>
     </div>
 </nav>
 <div class="container">

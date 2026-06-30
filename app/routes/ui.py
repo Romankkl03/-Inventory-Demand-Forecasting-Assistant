@@ -45,6 +45,45 @@ def _history_from_raw_rossmann(store_external_id: str, cutoff_date) -> tuple[lis
     return [d.isoformat() for d in subset["Date"]], [float(v) for v in subset["Sales"]]
 
 
+def _to_ru_reason(tag: str) -> str:
+    mapping = {
+        "High recent demand": "повышенный недавний спрос",
+        "Demand spike": "всплеск спроса",
+        "Low inventory cover": "низкое покрытие запасом",
+        "High forecast volatility": "высокая волатильность прогноза",
+        "Demand growth vs previous period": "рост спроса к прошлому периоду",
+        "Sufficient inventory": "достаточный запас",
+    }
+    return mapping.get(tag, tag.lower())
+
+
+def _build_supplier_draft(user_name: str, run, recommendations):
+    if run is None or not recommendations:
+        return None
+    total_expected = round(sum(item.expected_demand for item in recommendations), 2)
+    total_order = round(sum(item.recommended_order for item in recommendations), 2)
+    top_recommendation = recommendations[0]
+    reasons = [_to_ru_reason(tag) for tag in top_recommendation.reason_tags] or ["плановое пополнение"]
+    reason_lines = "\n".join(f"- {reason}" for reason in reasons)
+    subject = f"Заказ поставки на следующий период — магазин {top_recommendation.store_id}"
+    body = (
+        "Добрый день.\n"
+        f"По результатам анализа спроса на следующий период для магазина {top_recommendation.store_id} "
+        "рекомендуется пополнение поставки.\n"
+        f"Период: {run.horizon} дней.\n"
+        f"Ожидаемый спрос: {total_expected:,.0f} ед.\n"
+        f"Рекомендуемый объем заказа: {total_order:,.0f} ед.\n"
+        "Причины:\n"
+        f"{reason_lines}\n"
+        "Просим подтвердить возможность поставки на следующий период.\n\n"
+        f"С уважением,\n{user_name}"
+    )
+    return {
+        "subject": subject,
+        "body": body,
+    }
+
+
 @router.get("/")
 def ui_index(request: Request, session: Session = Depends(get_session)):
     user = _current_user(request, session)
@@ -186,6 +225,9 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         recs = RecommendationService(session).get_or_create_recommendations(last_run.id)
         context["recommendations"] = recs.recommendations
         context["report"] = ReportService(session).get_or_create_report(last_run.id, created_by=user.id)
+        context["supplier_draft"] = _build_supplier_draft(user.name, last_run, recs.recommendations)
+    else:
+        context["supplier_draft"] = None
 
     return templates.TemplateResponse(
         request=request,
@@ -245,7 +287,7 @@ async def dashboard_upload(
         records=records,
     )
     DataService(session).upload_dataset(payload)
-    return RedirectResponse("/dashboard?msg=Dataset uploaded", status_code=302)
+    return RedirectResponse("/dashboard?msg=Датасет успешно загружен", status_code=302)
 
 
 @router.post("/dashboard/random-val")
@@ -267,7 +309,7 @@ def dashboard_random_val(
             horizon=horizon,
         )
     )
-    return RedirectResponse("/dashboard?msg=Random validation forecast completed", status_code=302)
+    return RedirectResponse("/dashboard?msg=Прогноз на случайном примере val завершен", status_code=302)
 
 
 @router.post("/dashboard/run-forecast")
@@ -290,4 +332,4 @@ def dashboard_run_forecast(
             horizon=horizon,
         )
     )
-    return RedirectResponse("/dashboard?msg=Forecast run completed", status_code=302)
+    return RedirectResponse("/dashboard?msg=Запуск прогноза завершен", status_code=302)

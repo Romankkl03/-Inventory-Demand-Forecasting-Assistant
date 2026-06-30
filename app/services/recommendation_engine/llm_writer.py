@@ -23,6 +23,14 @@ class LLMRecommendationText:
         return asdict(self)
 
 
+@dataclass(slots=True)
+class LLMReportText:
+    summary: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 class VLLMWriter:
     """Client for OpenAI-compatible vLLM `/v1/chat/completions` API."""
 
@@ -30,7 +38,7 @@ class VLLMWriter:
         self,
         *,
         base_url: str,
-        model: str = "Qwen/Qwen2.5-3B-Instruct",
+        model: str = "Qwen/Qwen2.5-7B-Instruct",
         api_key: str | None = None,
         timeout_sec: int = 30,
     ) -> None:
@@ -117,6 +125,53 @@ class VLLMWriter:
             explanation=str(parsed.get("explanation", "")).strip(),
             supplier_document_draft=str(parsed.get("supplier_document_draft", "")).strip(),
         )
+
+    def generate_management_summary(self, *, payload: dict[str, Any]) -> LLMReportText:
+        request_payload = {
+            "model": self.model,
+            "temperature": 0.2,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You write concise management summaries for retail demand planning.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Generate a structured management summary with 3 blocks:\n"
+                        "1) Executive summary\n"
+                        "2) Main insights\n"
+                        "3) Store-level actions\n\n"
+                        f"Data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                        "Return strict JSON with key `summary` only. "
+                        "The value must be plain text with headings and bullet points."
+                    ),
+                },
+            ],
+        }
+        body = json.dumps(request_payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        req = request.Request(
+            url=f"{self.base_url}/v1/chat/completions",
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_sec) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"vLLM HTTP error {exc.code}: {details}") from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"vLLM connection error: {exc.reason}") from exc
+
+        content = response_payload["choices"][0]["message"]["content"]
+        parsed = _parse_json_content(content)
+        return LLMReportText(summary=str(parsed.get("summary", "")).strip())
 
 
 def _parse_json_content(content: str) -> dict[str, Any]:

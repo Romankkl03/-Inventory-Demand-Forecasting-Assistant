@@ -85,10 +85,17 @@ class ForecastRunStatusResponse(BaseModel):
 
 class RecommendationItemResponse(BaseModel):
     store_id: int
+    status: str
     expected_demand: float
+    demand_vs_baseline: str
+    demand_vs_baseline_pct: float
     recommended_order: float
+    priority: str
+    reason: str
+    reason_tags: list[str]
+    action: str
     risk_level: str
-    comment: str | None
+    comment: str | None = None
 
 
 class RecommendationsResponse(BaseModel):
@@ -103,6 +110,10 @@ class ReportResponse(BaseModel):
     forecast_run_id: int
     report_id: int
     summary: str
+    executive_summary: dict
+    kpis: dict
+    main_insights: list[str]
+    store_level_actions: list[str]
     created_at: datetime
 
 

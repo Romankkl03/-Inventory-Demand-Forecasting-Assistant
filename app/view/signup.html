@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign up</title>
+    <title>Регистрация</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f5f7fb; margin: 0; }
         .wrap { max-width: 420px; margin: 10vh auto; background: #fff; border-radius: 8px; padding: 22px; box-shadow: 0 1px 6px rgba(0,0,0,.1); }
@@ -14,18 +14,18 @@
 </head>
 <body>
 <div class="wrap">
-    <h2>Create account</h2>
+    <h2>Создание аккаунта</h2>
     <form method="post" action="/signup">
-        <label>Name</label>
+        <label>Имя</label>
         <input type="text" name="name" required />
         <label>Email</label>
         <input type="email" name="email" required />
-        <label>Password</label>
+        <label>Пароль</label>
         <input type="password" name="password" minlength="6" required />
-        <button type="submit">Sign up</button>
+        <button type="submit">Зарегистрироваться</button>
     </form>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
-    <p>Already have an account? <a href="/login">Sign in</a></p>
+    <p>Уже есть аккаунт? <a href="/login">Войти</a></p>
 </div>
 </body>
 </html>
