@@ -324,7 +324,7 @@ def dashboard_run_forecast(
     if user is None:
         return RedirectResponse("/login", status_code=302)
 
-    ForecastingService(session).run_forecast(
+    run = ForecastingService(session).enqueue_forecast(
         ForecastRunRequest(
             dataset_id=dataset_id,
             model_version_id=model_version_id,
@@ -332,4 +332,7 @@ def dashboard_run_forecast(
             horizon=horizon,
         )
     )
-    return RedirectResponse("/dashboard?msg=Запуск прогноза завершен", status_code=302)
+    return RedirectResponse(
+        f"/dashboard?msg=Запуск добавлен в очередь (run id: {run.forecast_run_id})",
+        status_code=302,
+    )

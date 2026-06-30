@@ -29,6 +29,9 @@ Schema overview is in `docs/db_schema.md`.
    - `cp .env.example .env`
 2. Start services:
    - `docker compose up --build -d`
+   - API immediately enqueues forecast runs (`POST /forecast/run`), execution is handled by `forecast-worker`.
+   - Scale workers for higher throughput:
+     - `docker compose up -d --scale forecast-worker=3`
 3. Open Swagger:
    - `http://localhost:8000/docs`
 4. Stop services:

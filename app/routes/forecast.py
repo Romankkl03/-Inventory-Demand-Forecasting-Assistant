@@ -14,12 +14,12 @@ from app.services.forecasting_service import ForecastingService
 router = APIRouter(prefix="/forecast", tags=["forecast"])
 
 
-@router.post("/run", response_model=ForecastRunResponse)
+@router.post("/run", response_model=ForecastRunResponse, status_code=202)
 def run_forecast(
     payload: ForecastRunRequest,
     session: Session = Depends(get_session),
 ) -> ForecastRunResponse:
-    return ForecastingService(session).run_forecast(payload)
+    return ForecastingService(session).enqueue_forecast(payload)
 
 
 @router.post("/run/random-val", response_model=RandomValForecastResponse)

@@ -84,6 +84,102 @@ class ForecastingService:
             forecasts=points,
         )
 
+    def enqueue_forecast(self, payload: ForecastRunRequest) -> ForecastRunResponse:
+        dataset = self.session.get(Dataset, payload.dataset_id)
+        if dataset is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found.")
+
+        model_version = self.session.get(ModelVersion, payload.model_version_id)
+        if model_version is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Model version not found."
+            )
+        if self.session.get(User, payload.created_by) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+        forecast_run = ForecastRun(
+            dataset_id=payload.dataset_id,
+            model_version_id=payload.model_version_id,
+            created_by=payload.created_by,
+            status=ForecastRunStatus.QUEUED,
+            horizon=payload.horizon,
+            started_at=None,
+            finished_at=None,
+        )
+        self.session.add(forecast_run)
+        self.session.commit()
+        self.session.refresh(forecast_run)
+
+        return ForecastRunResponse(
+            forecast_run_id=forecast_run.id,
+            status=forecast_run.status.value,
+            started_at=forecast_run.started_at,
+            finished_at=forecast_run.finished_at,
+            forecasts=[],
+        )
+
+    def claim_next_queued_run(self) -> int | None:
+        queued_run = self.session.exec(
+            select(ForecastRun)
+            .where(ForecastRun.status == ForecastRunStatus.QUEUED)
+            .order_by(ForecastRun.id)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        ).first()
+        if queued_run is None:
+            return None
+
+        queued_run.status = ForecastRunStatus.RUNNING
+        queued_run.started_at = pd.Timestamp.utcnow()
+        queued_run.finished_at = None
+        self.session.commit()
+        return queued_run.id
+
+    def execute_run(self, forecast_run_id: int) -> ForecastRunResponse:
+        run = self.session.get(ForecastRun, forecast_run_id)
+        if run is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Forecast run not found.")
+
+        if run.status != ForecastRunStatus.RUNNING:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Run {run.id} is not in running state.",
+            )
+
+        try:
+            self._ensure_run_dependencies(run)
+            old_rows = self.session.exec(
+                select(Forecast).where(Forecast.forecast_run_id == run.id)
+            ).all()
+            for row in old_rows:
+                self.session.delete(row)
+
+            payload = ForecastRunRequest(
+                dataset_id=run.dataset_id,
+                model_version_id=run.model_version_id,
+                created_by=run.created_by,
+                horizon=run.horizon,
+                start_date=None,
+            )
+            points = self._generate_forecasts(run_id=run.id, payload=payload)
+            run.status = ForecastRunStatus.COMPLETED
+            run.finished_at = pd.Timestamp.utcnow()
+            self.session.commit()
+            self.session.refresh(run)
+            return ForecastRunResponse(
+                forecast_run_id=run.id,
+                status=run.status.value,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                forecasts=points,
+            )
+        except Exception:
+            run.status = ForecastRunStatus.FAILED
+            run.finished_at = pd.Timestamp.utcnow()
+            self.session.commit()
+            self.session.refresh(run)
+            raise
+
     def get_forecast(self, forecast_run_id: int) -> ForecastRunResponse:
         run = self.session.get(ForecastRun, forecast_run_id)
         if run is None:
@@ -317,3 +413,11 @@ class ForecastingService:
                 )
 
         return points
+
+    def _ensure_run_dependencies(self, run: ForecastRun) -> None:
+        if self.session.get(Dataset, run.dataset_id) is None:
+            raise ValueError(f"Dataset {run.dataset_id} not found for run {run.id}.")
+        if self.session.get(ModelVersion, run.model_version_id) is None:
+            raise ValueError(f"Model version {run.model_version_id} not found for run {run.id}.")
+        if self.session.get(User, run.created_by) is None:
+            raise ValueError(f"User {run.created_by} not found for run {run.id}.")
