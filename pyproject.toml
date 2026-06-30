@@ -23,6 +23,8 @@ dependencies = [
 dev = [
     "ipykernel>=7.2.0",
     "jupyterlab>=4.5.7",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.uv]
@@ -34,3 +36,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
