@@ -98,8 +98,9 @@ class ReportService:
 
         block3_lines = []
         for item in recommendation_rows:
+            store_label = item.store_external_id or str(item.store_id)
             block3_lines.append(
-                f"Store {item.store_id}: {item.status} | Priority: {item.priority} | "
+                f"Store {store_label}: {item.status} | Priority: {item.priority} | "
                 f"Reason: {item.reason} | Action: {item.action}"
             )
 
@@ -225,8 +226,9 @@ class ReportService:
     def _build_store_actions(recommendation_rows) -> list[str]:
         actions: list[str] = []
         for item in recommendation_rows:
+            store_label = item.store_external_id or str(item.store_id)
             actions.append(
-                f"Store {item.store_id}: {item.status}; priority {item.priority}; "
+                f"Store {store_label}: {item.status}; priority {item.priority}; "
                 f"reason: {item.reason}; action: {item.action}."
             )
         return actions

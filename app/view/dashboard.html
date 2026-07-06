@@ -24,7 +24,7 @@
 
 <div class="grid">
     <div class="card">
-        <h3>Загрузка данных (CSV)</h3>
+        <h3>Загрузка датасета и прогноз на нем</h3>
         <p class="muted">Ожидаемые колонки: Store, Date, Sales, Customers, Promo, Promo2, SchoolHoliday, StateHoliday, Open.</p>
         <form method="post" action="/dashboard/upload" enctype="multipart/form-data">
             <label>Название датасета</label>
@@ -34,6 +34,18 @@
             <label>CSV-файл</label>
             <input type="file" name="csv_file" accept=".csv" required />
             <button type="submit">Загрузить датасет</button>
+        </form>
+
+        <hr style="margin: 14px 0; border: none; border-top: 1px solid #e2e8f0;" />
+
+        <form method="post" action="/dashboard/run-forecast">
+            <p class="muted">Для запуска будет использован последний загруженный датасет (id: {{ selected_dataset_id }}).</p>
+            <input type="hidden" name="dataset_id" value="{{ selected_dataset_id }}" />
+            <label>ID версии модели</label>
+            <input type="number" name="model_version_id" value="1" min="1" required />
+            <label>Горизонт (дни)</label>
+            <input type="number" name="horizon" value="14" min="1" max="90" required />
+            <button type="submit">Запустить прогноз на загруженном датасете</button>
         </form>
     </div>
 
@@ -47,19 +59,6 @@
             <label>Random seed (опционально)</label>
             <input type="number" name="seed" />
             <button type="submit">Запустить inference на val</button>
-        </form>
-    </div>
-
-    <div class="card">
-        <h3>Запуск прогноза</h3>
-        <form method="post" action="/dashboard/run-forecast">
-            <label>ID датасета</label>
-            <input type="number" name="dataset_id" value="1" min="1" required />
-            <label>ID версии модели</label>
-            <input type="number" name="model_version_id" value="1" min="1" required />
-            <label>Горизонт (дни)</label>
-            <input type="number" name="horizon" value="14" min="1" max="90" required />
-            <button type="submit">Запустить прогноз</button>
         </form>
     </div>
 </div>
@@ -112,7 +111,7 @@
         </tr>
         {% for item in recommendations %}
         <tr>
-            <td>{{ item.store_id }}</td>
+            <td>{{ item.store_external_id or item.store_id }}</td>
             <td>{{ item.status }}</td>
             <td>{{ item.expected_demand }}</td>
             <td>{{ item.demand_vs_baseline }}</td>
@@ -204,6 +203,14 @@ function copySupplierBody() {
   const body = document.getElementById("supplier-body").value;
   navigator.clipboard.writeText(body);
 }
+</script>
+{% endif %}
+
+{% if should_auto_refresh %}
+<script>
+setTimeout(() => {
+  window.location.reload();
+}, 2500);
 </script>
 {% endif %}
 {% endblock %}

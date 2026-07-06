@@ -85,6 +85,7 @@ class ForecastRunStatusResponse(BaseModel):
 
 class RecommendationItemResponse(BaseModel):
     store_id: int
+    store_external_id: str | None = None
     status: str
     expected_demand: float
     demand_vs_baseline: str

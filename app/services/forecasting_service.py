@@ -369,7 +369,16 @@ class ForecastingService:
         run_id: int,
         payload: ForecastRunRequest,
     ) -> list[ForecastPointResponse]:
-        stores = self.session.exec(select(Store)).all()
+        store_ids = self.session.exec(select(SalesRecord.store_id).distinct()).all()
+        if not store_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No sales history available. Upload sales data first.",
+            )
+
+        stores = self.session.exec(
+            select(Store).where(Store.id.in_(store_ids)).order_by(Store.id)
+        ).all()
         if not stores:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -378,6 +387,7 @@ class ForecastingService:
 
         start_date = payload.start_date or (date.today() + timedelta(days=1))
         points: list[ForecastPointResponse] = []
+        min_history_points = min(7, payload.horizon)
 
         for store in stores:
             history = self.session.exec(
@@ -385,6 +395,8 @@ class ForecastingService:
                 .where(SalesRecord.store_id == store.id)
                 .order_by(SalesRecord.date.desc())
             ).all()
+            if len(history) < min_history_points:
+                continue
 
             if history:
                 mean_sales = float(pd.Series([row.sales for row in history]).tail(30).mean())
@@ -411,6 +423,12 @@ class ForecastingService:
                         predicted_sales=predicted,
                     )
                 )
+
+        if not points:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough sales history to build forecast. Upload more rows per store.",
+            )
 
         return points
 

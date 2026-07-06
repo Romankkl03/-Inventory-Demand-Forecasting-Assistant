@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
 from app.database.config import get_settings
-from app.models import Forecast, ForecastRun, Recommendation, RiskLevel, SalesRecord
+from app.models import Forecast, ForecastRun, Recommendation, RiskLevel, SalesRecord, Store
 from app.schemas import RecommendationItemResponse, RecommendationsResponse
 from app.services.recommendation_engine import VLLMWriter, aggregate_forecast, build_recommendation
 
@@ -175,9 +175,12 @@ class RecommendationService:
             demand_vs_baseline_pct=demand_vs_baseline_pct,
             reason_tags=reason_tags,
         )
+        store = self.session.get(Store, recommendation.store_id)
+        store_external_id = store.external_id if store is not None else None
 
         return RecommendationItemResponse(
             store_id=recommendation.store_id,
+            store_external_id=store_external_id,
             status=status_label,
             expected_demand=recommendation.expected_demand,
             demand_vs_baseline=demand_vs_baseline,
