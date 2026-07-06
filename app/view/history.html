@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}История прогнозов{% endblock %}
+{% block content %}
+<div class="card">
+    <h2>История запусков прогноза</h2>
+    <p class="muted">Открой любой запуск, чтобы посмотреть график, рекомендации и отчёт.</p>
+    <table>
+        <tr>
+            <th>Run ID</th>
+            <th>Статус</th>
+            <th>Горизонт</th>
+            <th>Запущен</th>
+            <th>Завершен</th>
+            <th>Открыть</th>
+        </tr>
+        {% for run in runs %}
+        <tr>
+            <td>{{ run.id }}</td>
+            <td>{{ run.status.value }}</td>
+            <td>{{ run.horizon }}</td>
+            <td>{{ run.started_at }}</td>
+            <td>{{ run.finished_at }}</td>
+            <td><a href="/dashboard?run_id={{ run.id }}">Открыть</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

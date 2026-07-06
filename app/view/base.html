@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Ассистент прогнозирования спроса{% endblock %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1c2434; }
+        nav { background: #0f172a; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; }
+        nav a { color: #fff; text-decoration: none; margin-left: 12px; }
+        .container { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
+        .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+        .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+        input, button, select { width: 100%; padding: 10px; margin-top: 8px; box-sizing: border-box; }
+        button { background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        .ok { color: #166534; }
+        .err { color: #b91c1c; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: 8px; }
+        .muted { color: #64748b; font-size: 0.92rem; }
+    </style>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+<nav>
+    <div>Ассистент прогнозирования спроса</div>
+    <div>
+        <a href="/dashboard">Дашборд</a>
+        <a href="/dashboard/history">История прогнозов</a>
+        {% if user and user.email == "admin" %}
+        <a href="/docs">Swagger</a>
+        {% endif %}
+        <a href="/logout">Выйти</a>
+    </div>
+</nav>
+<div class="container">
+    {% block content %}{% endblock %}
+</div>
+</body>
+</html>

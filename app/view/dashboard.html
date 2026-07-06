@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  .kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
+  .kpi { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
+  .kpi .label { font-size:12px; color:#64748b; margin-bottom:4px; }
+  .kpi .value { font-size:18px; font-weight:600; }
+  .section-title { margin-top: 14px; margin-bottom: 8px; font-size: 18px; }
+  .draft-box { width:100%; min-height:240px; font-family: Arial, sans-serif; white-space: pre-wrap; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card">
+    <h2>Здравствуйте, {{ user.name }}</h2>
+    <p class="muted">Основной сценарий сервиса: данные -> прогноз -> рекомендации -> отчет.</p>
+    {% if status_message %}<div class="ok">{{ status_message }}</div>{% endif %}
+    {% if error_message %}<div class="err">{{ error_message }}</div>{% endif %}
+    {% if last_run %}
+    <p><b>Статус последнего запуска:</b> {{ last_run.status.value }} (run id: {{ last_run.id }})</p>
+    {% endif %}
+</div>
+
+<div class="grid">
+    <div class="card">
+        <h3>Загрузка датасета и прогноз на нем</h3>
+        <p class="muted">Ожидаемые колонки: Store, Date, Sales, Customers, Promo, Promo2, SchoolHoliday, StateHoliday, Open.</p>
+        <form method="post" action="/dashboard/upload" enctype="multipart/form-data">
+            <label>Название датасета</label>
+            <input type="text" name="dataset_name" value="uploaded-dataset" required />
+            <label>Источник</label>
+            <input type="text" name="source" value="ui-upload" required />
+            <label>CSV-файл</label>
+            <input type="file" name="csv_file" accept=".csv" required />
+            <button type="submit">Загрузить датасет</button>
+        </form>
+
+        <hr style="margin: 14px 0; border: none; border-top: 1px solid #e2e8f0;" />
+
+        <form method="post" action="/dashboard/run-forecast">
+            <p class="muted">Для запуска будет использован последний загруженный датасет (id: {{ selected_dataset_id }}).</p>
+            <input type="hidden" name="dataset_id" value="{{ selected_dataset_id }}" />
+            <label>ID версии модели</label>
+            <input type="number" name="model_version_id" value="1" min="1" required />
+            <label>Горизонт (дни)</label>
+            <input type="number" name="horizon" value="14" min="1" max="90" required />
+            <button type="submit">Запустить прогноз на загруженном датасете</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Случайный пример из Val</h3>
+        <form method="post" action="/dashboard/random-val">
+            <label>ID версии модели</label>
+            <input type="number" name="model_version_id" value="1" min="1" />
+            <label>Горизонт (дни)</label>
+            <input type="number" name="horizon" value="14" min="1" max="90" required />
+            <label>Random seed (опционально)</label>
+            <input type="number" name="seed" />
+            <button type="submit">Запустить inference на val</button>
+        </form>
+    </div>
+</div>
+
+{% if history_forecast_chart %}
+<div class="card">
+    <h3>История продаж и прогноз</h3>
+    <canvas id="salesChart"></canvas>
+</div>
+{% endif %}
+
+{% if metrics %}
+<div class="card">
+    <h3>Ключевые метрики</h3>
+    <table>
+        <tr><th>Метрика</th><th>Значение</th></tr>
+        <tr><td>Суммарный спрос на горизонте</td><td>{{ metrics.total_forecast_horizon }}</td></tr>
+        <tr><td>Средний дневной спрос</td><td>{{ metrics.avg_daily_forecast }}</td></tr>
+        <tr><td>Максимальный дневной спрос</td><td>{{ metrics.max_daily_forecast }}</td></tr>
+    </table>
+</div>
+{% endif %}
+
+{% if report and report.kpis %}
+<div class="card">
+    <div class="section-title">Сводка KPI</div>
+    <div class="kpi-grid">
+        <div class="kpi"><div class="label">Ожидаемый спрос</div><div class="value">{{ report.kpis.expected_demand }}</div></div>
+        <div class="kpi"><div class="label">Рекомендуемый заказ</div><div class="value">{{ report.kpis.recommended_order }}</div></div>
+        <div class="kpi"><div class="label">Приоритет</div><div class="value">{{ report.kpis.priority }}</div></div>
+        <div class="kpi"><div class="label">Отклонение от обычного</div><div class="value">{{ report.kpis.demand_vs_usual }}</div></div>
+        <div class="kpi"><div class="label">Магазинов с действиями</div><div class="value">{{ report.kpis.stores_requiring_action }}</div></div>
+    </div>
+</div>
+{% endif %}
+
+{% if recommendations %}
+<div class="card">
+    <h3>Рекомендации по заказу</h3>
+    <table>
+        <tr>
+            <th>Магазин</th>
+            <th>Статус</th>
+            <th>Ожидаемый спрос</th>
+            <th>Отклонение от baseline</th>
+            <th>Рекомендуемый заказ</th>
+            <th>Приоритет</th>
+            <th>Причина</th>
+            <th>Действие</th>
+        </tr>
+        {% for item in recommendations %}
+        <tr>
+            <td>{{ item.store_external_id or item.store_id }}</td>
+            <td>{{ item.status }}</td>
+            <td>{{ item.expected_demand }}</td>
+            <td>{{ item.demand_vs_baseline }}</td>
+            <td>{{ item.recommended_order }}</td>
+            <td>{{ item.priority }}</td>
+            <td>
+                {% for tag in item.reason_tags %}
+                <span style="display:inline-block; padding:2px 8px; margin:2px; background:#e2e8f0; border-radius:999px; font-size:12px;">{{ tag }}</span>
+                {% endfor %}
+            </td>
+            <td>{{ item.action }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+{% if report %}
+<div class="card">
+    <h3>Итоговый отчет</h3>
+    <div class="section-title">Краткое резюме</div>
+    <ul>
+        <li>Обработано магазинов: {{ report.executive_summary.processed_stores }}</li>
+        <li>Общий ожидаемый спрос: {{ report.executive_summary.total_expected_demand }}</li>
+        <li>Общий рекомендуемый заказ: {{ report.executive_summary.total_recommended_order }}</li>
+        <li>Магазинов высокого риска: {{ report.executive_summary.high_risk_stores }}</li>
+        <li>Основной вывод: {{ report.executive_summary.main_conclusion }}</li>
+    </ul>
+    <div class="section-title">Основные инсайты</div>
+    <ul>
+        {% for insight in report.main_insights %}
+        <li>{{ insight }}</li>
+        {% endfor %}
+    </ul>
+    <div class="section-title">Действия по магазинам</div>
+    <ul>
+        {% for action_line in report.store_level_actions %}
+        <li>{{ action_line }}</li>
+        {% endfor %}
+    </ul>
+    <p class="muted">Сформирован: {{ report.created_at }}</p>
+</div>
+{% endif %}
+
+{% if supplier_draft %}
+<div class="card">
+    <h3>Шаблон письма поставщику</h3>
+    <label>Тема</label>
+    <input id="supplier-subject" type="text" value="{{ supplier_draft.subject }}" />
+    <label>Текст письма</label>
+    <textarea id="supplier-body" class="draft-box">{{ supplier_draft.body }}</textarea>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <button type="button" onclick="copySupplierSubject()">Копировать тему</button>
+        <button type="button" onclick="copySupplierBody()">Копировать текст</button>
+    </div>
+</div>
+{% endif %}
+
+{% if history_forecast_chart %}
+<script>
+const historyDates = {{ history_forecast_chart.history_dates | tojson }};
+const historyValues = {{ history_forecast_chart.history_values | tojson }};
+const forecastDates = {{ history_forecast_chart.forecast_dates | tojson }};
+const forecastValues = {{ history_forecast_chart.forecast_values | tojson }};
+const labels = [...historyDates, ...forecastDates];
+const historyPad = [...historyValues, ...new Array(forecastValues.length).fill(null)];
+const forecastPad = [...new Array(historyValues.length).fill(null), ...forecastValues];
+
+new Chart(document.getElementById("salesChart"), {
+  type: "line",
+  data: {
+    labels: labels,
+    datasets: [
+      { label: "История продаж", data: historyPad, borderColor: "#2563eb", tension: 0.2 },
+      { label: "Прогноз продаж", data: forecastPad, borderColor: "#dc2626", tension: 0.2 }
+    ]
+  }
+});
+</script>
+{% endif %}
+
+{% if supplier_draft %}
+<script>
+function copySupplierSubject() {
+  const subject = document.getElementById("supplier-subject").value;
+  navigator.clipboard.writeText(subject);
+}
+function copySupplierBody() {
+  const body = document.getElementById("supplier-body").value;
+  navigator.clipboard.writeText(body);
+}
+</script>
+{% endif %}
+
+{% if should_auto_refresh %}
+<script>
+setTimeout(() => {
+  window.location.reload();
+}, 2500);
+</script>
+{% endif %}
+{% endblock %}
